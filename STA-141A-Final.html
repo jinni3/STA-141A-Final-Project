@@ -368,14 +368,48 @@ display: none;
 <p><br /></p>
 <div id="introduction" class="section level1">
 <h1>Introduction</h1>
-<p>In this project, we are working with a total of 18 RDS files which
-contain results from 18 sessions of experiments. The experiments consist
-of a single mouse receiving stimuli (left and right contrast) to test an
-outcome (feedback type). The neural activity (spks), time of activity
-(time), and the area of the brain where the neuron lives (brain_area)
-are also all recorded. The primary objective of the project is to build
-a predictive model to predict to outcome of each trial using the neural
-activity and stimuli data.</p>
+<p>The study conducted by Steinmetz et al. (2019) explores how neural
+activity correlates with decision-making processes in mice. The
+experimental setup was designed to investigate the neural mechanisms
+underlying visual perception and behavioral choices. By combining
+high-density neural recordings with a carefully controlled behavioral
+task, the researchers were able to capture both the neural and
+behavioral responses of mice as they interacted with visual stimuli.</p>
+<p>At the core of the experiment was a decision-making task that
+required mice to respond to visual stimuli presented on two screens
+positioned on either side of the animal. The stimuli varied in contrast
+levels, which were randomly assigned values from the set {0, 0.25, 0.5,
+1}. A contrast level of 0 indicated the absence of a stimulus, while
+higher values represented increasingly salient visual cues. The mice
+were trained to use a wheel controlled by their forepaws to indicate
+their decisions based on the relative contrast levels of the
+stimuli.</p>
+<p>The task was designed to test the mice’s ability to discriminate
+between the contrasts on the left and right screens. Specifically:</p>
+<ul>
+<li><p>If the left contrast was greater than the right contrast, the
+correct response was to turn the wheel to the right.</p></li>
+<li><p>If the right contrast was greater than the left contrast, the
+correct response was to turn the wheel to the left.</p></li>
+<li><p>If both contrasts were zero, the correct response was to hold the
+wheel still.</p></li>
+<li><p>If the contrasts were equal but non-zero, the correct response
+was randomly assigned to either left or right with equal
+probability.</p></li>
+</ul>
+<hr />
+<p>The study involved a total of 10 mice, with data collected over 39
+sessions. Each session comprised several hundred trials, ensuring a
+robust dataset for analysis. For the purposes of this project, a subset
+of the data was used, consisting of 18 sessions from four mice: Cori,
+Frossman, Hence, and Lederberg. The experiments consist of a single
+mouse receiving stimuli (left and right contrast) to test an outcome
+(feedback type). The neural activity (spks), time of activity (time),
+and the area of the brain where the neuron lives (brain_area) are also
+all recorded.</p>
+<p>The primary objective of the project is to build a predictive model
+to predict to outcome of each trial using the neural activity and
+stimuli data.</p>
 <p><br /></p>
 </div>
 <div id="exploratory-data-analysis" class="section level1">
