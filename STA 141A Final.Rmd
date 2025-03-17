@@ -1,0 +1,755 @@
+---
+title: "STA 141A-Final Project"
+author: "Jinnie 920620900"
+output: html_document
+---
+
+```{r echo=FALSE}
+library(tidyverse)
+library(ggplot2)
+```
+
+<br/>
+
+# Introduction 
+In this project, we are working with a total of 18 RDS files which contain results from 18 sessions of experiments. The experiments consist of a single mouse receiving stimuli (left and right contrast) to test an outcome (feedback type). The neural activity (spks), time of activity (time), and the area of the brain where the neuron lives (brain_area) are also all recorded. The primary objective of the project is to build a predictive model to predict to outcome of each trial using the neural activity and stimuli data. 
+
+```{r setup, include=FALSE}
+session=list()
+for(i in 1:18){
+  session[[i]]=readRDS(paste('./Data/session',i,'.rds',sep=''))
+  print(session[[i]]$mouse_name)
+  print(session[[i]]$date_exp)
+}
+
+```
+
+<br/>
+
+# Exploratory Data Analysis
+
+
+### (1) Describe the data structures across sessions
+
+```{r include=FALSE}
+
+session1 <- session[[1]]
+str(session1)
+
+```
+
+I opened up the first session to see the structure of the data, and I was able to break down the meaning of each variable. Feedback-type, Contrast_left, and Contrast_right are all vectors of 114 numbers. The mouse name and date_exp are both characters. The brain_area was a vector of 734 characters. The spks is a list of 114 matrices of 734 by 40 matrices. Finally, the time was a list of 114 vectors of 40 numbers. 
+
+This showed me that the number of neurons is 734, number of trials is 114, and there are 40 time bins in this session. Using that knowledge, I was able to figure out how to extract this information as well. 
+
+(a) Explore number of neurons and number of trials 
+
+```{r echo=FALSE}
+
+session_summary <- data.frame(
+  session = integer(),
+  n_trials = integer(),
+  n_neurons = numeric()
+)
+
+for (i in 1:length(session)) {
+  sess <- session[[i]]
+  
+  n_trials <- length(sess$spks)
+  
+  n_neurons <- nrow(sess$spks[[1]])
+  
+  session_summary <- 
+    rbind(session_summary,
+          data.frame(session = i,
+                     n_trials = n_trials,
+                     n_neurons = n_neurons))
+}
+
+print(session_summary)
+
+```
+
+This gave me a summary of the number of trials and neurons of each session in the file. 
+
+(b) Explore Stimulus Conditions and Feedback Types
+
+
+```{r echo=FALSE}
+
+
+trial_data_list <- list()
+
+for (i in 1:18) {
+  sess <- session[[i]]
+  for (j in 1:length(sess$spks)) {
+    trial_data_list[[length(trial_data_list) + 1]] <- data.frame(
+      session = i,
+      trial = j,
+      feedback_type = sess$feedback_type[j],
+      contrast_left = sess$contrast_left[j],
+      contrast_right = sess$contrast_right[j]
+    )
+  }
+}
+
+trial_data <- bind_rows(trial_data_list)
+
+feedback_summary <- trial_data %>%
+  group_by(contrast_left, contrast_right, feedback_type) %>%
+  summarise(n = n(), .groups="drop") 
+
+print(feedback_summary)
+```
+
+feed_back summary has a table with the number of trials that correspond to each feedback and contrast L/R combination. We can see that the only inputs for contrast left and right are 0.00, 0.25, 0.50, or 1.00. 
+
+```{r echo=FALSE}
+ggplot(trial_data, aes(x = factor(contrast_left), fill = factor(feedback_type))) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ contrast_right) +
+  labs(title = "Feedback Types by Contrast Conditions",
+       x = "Contrast Left",
+       fill = "Feedback Type") +
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+ggplot(trial_data, aes(x = factor(contrast_right), fill = factor(feedback_type))) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ contrast_left) +
+  labs(title = "Feedback Types by Contrast Conditions",
+       x = "Contrast Right",
+       fill = "Feedback Type") +
+  theme_minimal()
+```
+
+We made a wrapped barplot to show some sort of pattern each condition of contrast_right and contrast_left can affect the feedback type. One thing we can see pretty easily is that most of the trials were under the condition that both contrast_left and contrast_right have a value of 0. Another thing we can kind of see is that there is a pattern showing where there is less fails, "-1", than success, "1", in every combination. Another thing is that the success rate increases if only one contrast left or right is higher/lower, than if both are high/low. In this case, high means 0.5 or 1, and low means 0 or 0.25. 
+
+***
+
+### (2) Explore Neural Activity During Each Trial
+
+```{r echo=FALSE}
+selected_session <- session[[5]]
+selected_trial <- selected_session$spks[[11]]  # This is a matrix: rows = neurons, columns = time bins
+
+# Convert the spike matrix to a data frame for plotting
+spike_df <- as.data.frame(selected_trial)
+spike_df$neuron <- 1:nrow(spike_df)
+spike_long <- spike_df %>%
+  pivot_longer(cols = -neuron, names_to = "time_bin", values_to = "spike_count")
+
+ggplot(spike_long, aes(x = time_bin, y = neuron, fill = spike_count)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(title = "Spike Heatmap for Trial 11, Session 5",
+       x = "Time Bin",
+       y = "Neuron") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+
+```
+
+I made a heatmap to show the changes of spikes in neural activity in a specific trial using session5's trial 11 as an example. One pattern I was able to notice here is that there seems to be a few neurons around the 150-200 range on neuron number that consistently spike throughout the trial. 
+
+```{r echo=FALSE}
+
+selected_session <- session[[10]]
+selected_trial <- selected_session$spks[[9]]
+
+spike_df <- as.data.frame(selected_trial)
+spike_df$neuron <- 1:nrow(spike_df)
+spike_long <- spike_df %>%
+  pivot_longer(cols = -neuron, names_to = "time_bin", values_to = "spike_count")
+
+ggplot(spike_long, aes(x = time_bin, y = neuron, fill = spike_count)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(title = "Spike Heatmap for Trial 3, Session 10",
+       x = "Time Bin",
+       y = "Neuron") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+
+```
+
+I wanted to check a different trial from a different session to see if the same patter I found was still there, and it seems there is. There are a certain group of neurons that consistently go off throughout the trial although the range of the neurons may change by trial. Another thing I found is that the neural activity is quite similar in within a session's trials. 
+
+
+
+### (3) Explore Changes Across Trials
+
+(a) Compute the average spike count per trial (across all neurons) for each session.
+
+```{r echo=FALSE}
+
+trial_avg_spike <- data.frame(
+  session = integer(),
+  trial = integer(),
+  avg_spike = numeric()
+)
+
+for (i in 1:length(session)) {
+  sess <- session[[i]]
+  for (j in 1:length(sess$spks)) {
+    spike_matrix <- sess$spks[[j]]
+    avg_spike <- mean(spike_matrix)
+    trial_avg_spike <- rbind(trial_avg_spike,
+                             data.frame(session = i, trial = j, avg_spike = avg_spike))
+  }
+}
+
+session5_data <- trial_avg_spike %>% filter(session == 5)
+overall_avg <- mean(session5_data$avg_spike)
+
+
+
+ggplot(session5_data, aes(x = trial, y = avg_spike)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = overall_avg, color = "red", linetype = "dashed", linewidth = 0.1) +
+  labs(title = "Average Spike Count Across Trials (Session 5)",
+       x = "Trial Number",
+       y = "Average Spike Count") +
+  theme_minimal()
+
+
+
+```
+When we look at the overall average spike count in the session versus each individual trial's average, we can see that there is not much deviation from the population to true average. 
+
+I also wanted to see the relationship between spikes and feedback type in a session. 
+
+```{r echo=FALSE}
+# trial_avg_spike has columns: session, trial, avg_spike
+# trial_data has columns: session, trial, feedback_type, contrast_left, contrast_right, etc.
+
+session_feedback_spikes <- merge(trial_avg_spike, trial_data, by = c("session", "trial"))
+
+sessionx_feedback <- session_feedback_spikes %>% filter(session == 5)
+
+ggplot(sessionx_feedback, aes(group=(x = feedback_type), y = avg_spike)) +
+  geom_boxplot() +
+  facet_wrap(~ feedback_type, scales = "free_y") +
+  labs(title = "Session 5 Feedback vs. Average Spike Count",
+       x = "Feedback Type",
+       y = "Average Spike Count") +
+  theme_minimal() +
+  coord_flip()
+```
+This will show you the pattern of how spike count correlates with the feedback type . I used session5's data, and found that higher average spike count in a trial correlates with feedback type 1. The opposite is true for feedback type of -1. 
+
+
+### (4) Explore Homogeneity and Heterogeneity Across Sessions and Mice
+
+```{r echo=FALSE}
+
+
+session_mice_list <- list()
+
+for (i in 1:18) {
+  sess <- session[[i]]
+  fb <-sess$feedback_type
+  session_mice_list[[length(session_mice_list) + 1]] <- data.frame(
+      session = i,
+      mouse_name = sess$mouse_name,
+      feedback = sum(fb=="1")/length(fb)
+    )
+    
+}
+
+session_mice <- bind_rows(session_mice_list)
+
+
+mouse_success_rate <- session_mice %>%
+  group_by(mouse_name) %>%
+  summarise(avg_success_rate = mean(feedback))
+
+ggplot(mouse_success_rate, aes(x = mouse_name, y = avg_success_rate)) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Average Success Feedback Rate by Mouse",
+       x = "Mouse Name",
+       y = "Average Success Feedback Rate") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+The graph above suggests each mouse has a different average success rate. I can also see that the average success rate increases based on order of session. 
+
+```{r echo=FALSE}
+ggplot(session_mice, aes(x = factor(session), y = feedback)) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Success Feedback Rate by Session",
+       x = "Session",
+       y = "Average Success Feedback Rate") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+```
+
+
+This shows a pattern that the average success feedback rate increases as session increases. This makes sense since the lowest success rate mouse was studied first and the highest success rate mouse was studied last respectively. 
+
+<br/>
+
+# Data Integration
+
+
+```{r}
+
+pred_data_list <- list()
+
+for (i in 1:18) {
+  sess <- session[[i]]
+  for (j in 1:length(sess$spks)) {
+    spike_matrix <- sess$spks[[j]]
+    avg_spike <- mean(spike_matrix)
+    pred_data_list[[length(pred_data_list) + 1]] <- data.frame(
+      session = i,
+      trial = j,
+      contrast_left = sess$contrast_left[j],
+      contrast_right = sess$contrast_right[j],
+      avg_spike = avg_spike
+    )
+  }
+}
+
+pred_data <- bind_rows(pred_data_list)
+
+
+```
+
+Across sessions and trials, I combined the specific data I want to use for my predictive model which are the contrast left, contrast right, and average spike per trial per session. 
+
+<br/>
+
+# Predictive Modeling
+
+```{r packages, include=FALSE}
+
+library(readr)
+library(caret) # confusion matrix
+library(ROCR) # ROC curve
+library(xgboost)
+```
+
+In this modeling, I will be using session 5 trials to test my predictive model. 
+
+
+```{r predictive_variables, echo=FALSE}
+
+
+s = session[[5]]
+
+n_obs = length(sess$feedback_type)
+
+dat = tibble(
+    feedback_type = as.factor(sess$feedback_type),  
+    decision = rep('name', n_obs),
+    avg_spikes = rep(0, n_obs)
+)
+
+for (i in 1:n_obs){
+    if (sess$contrast_left[i] > sess$contrast_right[i]){
+        dat$decision[i] = '1'  # Left contrast higher
+    } else if (sess$contrast_left[i] < sess$contrast_right[i]){
+        dat$decision[i] = '2'  # Right contrast higher
+    } else if (sess$contrast_left[i] == sess$contrast_right[i] & sess$contrast_left[i] == 0){
+        dat$decision[i] = '3'  # No stimulus
+    } else{
+        dat$decision[i] = '4'  # Equal non-zero contrast
+    }
+    
+    # Compute average spikes per trial
+    spks.trial = sess$spks[[i]]
+    total.spikes = apply(spks.trial, 1, sum)  # Sum spikes per neuron
+    dat$avg_spikes[i] = mean(total.spikes)  # Compute mean spikes per trial
+}
+
+dat$decision = as.factor(dat$decision)
+
+dat <- dat %>% mutate(feedback_type = as.numeric(as.character(feedback_type)))
+
+# Create separate tables for success and fail trials
+success_trials <- dat %>% filter(feedback_type == 1) %>% select(-feedback_type)
+failed_trials <- dat %>% filter(feedback_type == -1) %>% select(-feedback_type)
+
+print("Success Trials Summary:")
+print(summary(success_trials))
+
+print("Failed Trials Summary:")
+print(summary(failed_trials))
+
+num_success <- sum(dat$feedback_type ==1)
+num_total <- nrow(dat)
+
+success_rate <- (num_success)/(num_total)
+print(success_rate)
+
+
+
+```
+
+The above data shows that in Session 5, trials had more chance of success if the right stimulus was stronger or if there was no stimulus at all. You can also see the rate of success in the session. Using this data, we can more easily try to predict the feedback type based on the predictive factors of stimulus and neural activity.
+
+
+```{r train/test_data, echo=FALSE}
+set.seed(143)
+
+sample <- sample.int(n = n_obs, size = floor(.8 * n_obs), replace = F)
+train1 <- dat[sample, ]
+test1  <- dat[-sample, ]
+train1$feedback_type <- ifelse(train1$feedback_type == -1, 0, train1$feedback_type) 
+
+```
+
+I first set a random seed to ensure reproducibility. Then, I randomly selected 80% of the dataset for training with no replacement. Finally, I split the dataset into a training dataset (80% of the data) and test dataset (the remaining 20%). I also made the feedback type binary so that the outcome -1 is now 0 to signify a failed trial.
+
+```{r model_fit, echo=FALSE}
+fit1 <- glm(feedback_type~., data = train1, family="binomial")
+summary(fit1)
+```
+
+I fit a logistic regression model using the training dataset specifying binary outcomes. In this specific outcome, we can see that the higher number of average spikes increases the probability of success. Also, no stimulus leads to higher chance of success. These are the two predictors that I deem to be statistically significant in this session. This is shown by the low p-value.
+
+
+```{r model_accuracy, echo=FALSE}
+
+pred1 <- predict(fit1, test1 %>% select(-feedback_type), type = 'response')
+prediction1 <- factor(pred1 > 0.5, labels = c('-1', '1'))
+mean(prediction1 == test1$feedback_type)
+
+```
+
+This predictive model on the test data set is only 64.7% accurate. 
+
+
+```{r confusion_mtx, echo=FALSE}
+table(Predicted = prediction1, Actual = test1$feedback_type)
+```
+The confusion matrix above shows that the model is likely to predict a failed trial as a success. 
+
+
+To try to improve the model, I will remove some of the statistically insignificant variables like decision4 (equal non-zero contrasts).
+
+```{r filter4_model fit, echo=FALSE}
+# Filter out decision 4
+
+set.seed(143)
+train2 <- train1 %>% filter(decision != 4)
+test2 <- test1 %>% filter(decision != 4)
+
+
+fit2 <- glm(feedback_type ~ ., data = train2, family = "binomial")
+summary(fit2)
+
+```
+Immediately, I can see that the null deviance, residual deviance, and AIC is lower than the unfiltered model. 
+
+
+```{r accuracy2, echo=FALSE}
+
+pred2 <- predict(fit2, test2 %>% select(-feedback_type), type = 'response')
+pred_binary <- ifelse(pred2 > 0.5, 1, -1)  # Ensure correct labels
+prediction2 <- factor(pred_binary, levels = c('-1', '1'))
+mean(prediction2 == test2$feedback_type)
+
+```
+
+The filtered model is around 1.25% more accurate than not filtered. 
+
+
+```{r confusion_mtx2, echo=FALSE}
+table(Predicted = prediction2, Actual = test2$feedback_type)
+```
+
+Same as before, we can see that the model is likely to predict a failed trial as a success. 
+
+```{r ROC graph, echo=FALSE}
+# Model 1
+pr = prediction(pred1, test1$feedback_type)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+
+# Model 2
+pr = prediction(pred2, test2$feedback_type)
+prf2 <- performance(pr, measure = "tpr", x.measure = "fpr")
+auc2 <- performance(pr, measure = "auc")
+auc2 <- auc2@y.values[[1]]
+
+# Bias Guess
+pred0 = pred1 * 0 + 1
+pr = prediction(pred0, test1$feedback_type)
+prf0 <- performance(pr, measure = "tpr", x.measure = "fpr")
+auc0 <- performance(pr, measure = "auc")
+auc0 <- auc0@y.values[[1]]
+
+plot(prf2, ,col = 'red', main = 'ROC curve')
+plot(prf, add = TRUE, col = 'blue')
+plot(prf0, add = TRUE, col = 'green')
+legend("bottomright", legend=c("Model 1", "Model 2", "Bias Guess"), col=c("blue", "red", 'green'), lty=1:1, 
+       cex=0.8)
+
+```
+
+```{r AUC values, echo=FALSE}
+print("AUC Model 1: ")
+print(auc)
+
+print("AUC Model 2: ")
+print(auc2)
+
+```
+
+
+Overall, Model 2 is a better fit since it has lower null and residual deviance, lower AIC, and slightly higher prediction accuracy even though Model 1 has a slightly higher AUC. 
+
+
+
+<br/>
+
+# Prediction Performace on test set
+
+```{r test data, include=FALSE}
+
+test.data=list()
+for(i in 1:2){
+  test.data[[i]]=readRDS(paste('./test/test',i,'.rds',sep=''))
+  print(test.data[[i]]$mouse_name)
+  print(test.data[[i]]$date_exp)
+}
+
+```
+### (1) Test 1 performance on prediction model.
+```{r echo=FALSE}
+
+t = test.data[[1]]
+
+n_obs1 = length(t$feedback_type)
+
+dat1 = tibble(
+    feedback_type = as.factor(t$feedback_type),  
+    decision = rep('name', n_obs1),
+    avg_spikes = rep(0, n_obs1)
+)
+
+for (i in 1:n_obs1){
+    if (t$contrast_left[i] > t$contrast_right[i]){
+        dat1$decision[i] = '1'  # Left contrast higher
+    } else if (t$contrast_left[i] < t$contrast_right[i]){
+        dat1$decision[i] = '2'  # Right contrast higher
+    } else if (t$contrast_left[i] == t$contrast_right[i] & t$contrast_left[i] == 0){
+        dat1$decision[i] = '3'  # No stimulus
+    } else{
+        dat1$decision[i] = '4'  # Equal non-zero contrast
+    }
+    
+    # Compute average spikes per trial
+    spks.trial = t$spks[[i]]
+    total.spikes = apply(spks.trial, 1, sum)  # Sum spikes per neuron
+    dat1$avg_spikes[i] = mean(total.spikes)  # Compute mean spikes per trial
+}
+
+dat1$decision = as.factor(dat1$decision)
+
+dat1 <- dat1 %>% mutate(feedback_type = as.numeric(as.character(feedback_type)))
+
+
+```
+
+```{r echo=FALSE}
+
+set.seed(143)
+
+sample <- sample.int(n = n_obs1, size = floor(.8 * n_obs1), replace = F)
+t_train1 <- dat1[sample, ]
+t_test1  <- dat1[-sample, ]
+t_train1$feedback_type <- ifelse(t_train1$feedback_type == -1, 0, t_train1$feedback_type) 
+
+# Filter out decision 4
+t_train1_clean <- t_train1 %>% filter(decision != 4)
+t_test1_clean <- t_test1 %>% filter(decision != 4)
+
+```
+
+##### (a) Generalized Linear Model of Test 1
+```{r echo=FALSE}
+
+t_fit1 <- glm(feedback_type ~ ., data = t_train1_clean, family = "binomial")
+summary(t_fit1)
+
+```
+##### (b) Test 1 Accuracy on Model
+```{r echo=FALSE}
+
+t_pred1 <- predict(t_fit1, t_test1_clean %>% select(-feedback_type), type = 'response')
+t_pred_binary1 <- ifelse(t_pred1 > 0.5, 1, -1)  # Ensure correct labels
+t_prediction1 <- factor(t_pred_binary1, levels = c('-1', '1'))
+mean(t_prediction1 == t_test1_clean$feedback_type)
+
+```
+
+##### (c) Confusion Matrix
+```{r echo=FALSE}
+table(Predicted = t_prediction1, Actual = t_test1_clean$feedback_type)
+```
+##### (d) ROC Curve
+```{r echo=FALSE}
+# Model 1
+pr = prediction(t_pred1, t_test1_clean$feedback_type)
+t_prf1 <- performance(pr, measure = "tpr", x.measure = "fpr")
+t_auc1 <- performance(pr, measure = "auc")
+t_auc1 <- t_auc1@y.values[[1]]
+
+# Bias Guess
+pred0 = pred1 * 0 + 1
+pr = prediction(pred0, test1$feedback_type)
+prf0 <- performance(pr, measure = "tpr", x.measure = "fpr")
+auc0 <- performance(pr, measure = "auc")
+auc0 <- auc0@y.values[[1]]
+
+
+plot(t_prf1, col = "blue", main = 'ROC curve')
+plot(prf0, add = TRUE, col = 'green')
+legend("bottomright", legend=c("Test 1","Bias Guess"), col=c("blue",  'green'), lty=1:1, 
+       cex=0.8)
+
+```
+
+##### (e) AUC Value
+```{r echo=FALSE}
+print(c(t_auc1))
+```
+
+### (2) Test 2 performance on prediction model.
+
+```{r echo=FALSE}
+
+t2 = test.data[[2]]
+
+n_obs2 = length(t2$feedback_type)
+
+dat2 = tibble(
+    feedback_type = as.factor(t2$feedback_type),  
+    decision = rep('name', n_obs2),
+    avg_spikes = rep(0, n_obs2)
+)
+
+for (i in 1:n_obs2){
+    if (t2$contrast_left[i] > t2$contrast_right[i]){
+        dat2$decision[i] = '1'  # Left contrast higher
+    } else if (t2$contrast_left[i] < t2$contrast_right[i]){
+        dat2$decision[i] = '2'  # Right contrast higher
+    } else if (t2$contrast_left[i] == t2$contrast_right[i] & t2$contrast_left[i] == 0){
+        dat2$decision[i] = '3'  # No stimulus
+    } else{
+        dat2$decision[i] = '4'  # Equal non-zero contrast
+    }
+    
+    # Compute average spikes per trial
+    spks.trial = t2$spks[[i]]
+    total.spikes = apply(spks.trial, 1, sum)  # Sum spikes per neuron
+    dat2$avg_spikes[i] = mean(total.spikes)  # Compute mean spikes per trial
+}
+
+dat2$decision = as.factor(dat2$decision)
+
+dat2 <- dat2 %>% mutate(feedback_type = as.numeric(as.character(feedback_type)))
+
+
+```
+
+
+```{r echo=FALSE}
+
+set.seed(143)
+
+sample <- sample.int(n = n_obs2, size = floor(.8 * n_obs2), replace = F)
+t_train2 <- dat2[sample, ]
+t_test2  <- dat2[-sample, ]
+t_train2$feedback_type <- ifelse(t_train2$feedback_type == -1, 0, t_train2$feedback_type) 
+
+# Filter out decision 4
+t_train2_clean <- t_train2 %>% filter(decision != 4)
+t_test2_clean <- t_test2 %>% filter(decision != 4)
+
+```
+
+##### (a)Generalized Linear Model of Test 2
+```{r echo=FALSE}
+
+t_fit2 <- glm(feedback_type ~ ., data = t_train2_clean, family = "binomial")
+summary(t_fit2)
+
+```
+ 
+##### (b) Test 2 Accuracy on Model
+```{r echo=FALSE}
+
+t_pred2 <- predict(t_fit2, t_test2_clean %>% select(-feedback_type), type = 'response')
+t_pred_binary2 <- ifelse(t_pred2 > 0.5, 1, -1)  # Ensure correct labels
+t_prediction2 <- factor(t_pred_binary2, levels = c('-1', '1'))
+mean(t_prediction2 == t_test2_clean$feedback_type)
+
+```
+
+##### (c) Confusion Matrix
+```{r echo=FALSE}
+table(Predicted = t_prediction2, Actual = t_test2_clean$feedback_type)
+```
+##### (d) ROC Curve
+```{r echo=FALSE}
+# Model 1
+pr = prediction(t_pred2, t_test2_clean$feedback_type)
+t_prf2 <- performance(pr, measure = "tpr", x.measure = "fpr")
+t_auc2 <- performance(pr, measure = "auc")
+t_auc2 <- t_auc2@y.values[[1]]
+
+# Bias Guess
+pred0 = pred1 * 0 + 1
+pr = prediction(pred0, test1$feedback_type)
+prf0 <- performance(pr, measure = "tpr", x.measure = "fpr")
+auc0 <- performance(pr, measure = "auc")
+auc0 <- auc0@y.values[[1]]
+
+
+plot(t_prf2, col = "blue", main = 'ROC curve')
+plot(prf0, add = TRUE, col = 'green')
+legend("bottomright", legend=c("Test 1","Bias Guess"), col=c("blue",  'green'), lty=1:1, 
+       cex=0.8)
+
+```
+
+##### (e) AUC Value
+```{r echo=FALSE}
+print(c(t_auc2))
+```
+
+
+<br/>
+
+# Discussion
+
+I chose to do a GLM model since the outcome variable (feedback type) is binary, and using this model shows how specific predictors affect likelihood of success versus failure through the p-value. Also, there is no residual normality assumption which fits better with the binary outcomes. 
+
+I also removed certain predictors that may have led to overfitting in the model and reduction of accuracy. 
+
+I feel my model worked fairly well on test 1 since the statistically significant predictor variables were similar to the ones on my training model. As a result, the accuracy and AUC value were pretty good. However, test 2 was not very accurate. This difference is probably due to the fact the statistically significant predictors were not the same in this session.
+
+Something that could have made my model better is if it factored in more predictor variables such as mouse since we found out during the EDA that each mouse seems to have a different success rate. 
+
+
+# Acknowledgements 
+
+ChatGPT used for debugging code and graph adjustments
+
+
+
+
