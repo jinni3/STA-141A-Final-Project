@@ -772,5 +772,13 @@ Something that could have made my model better is if it factored in more predict
 ChatGPT used for debugging code and graph adjustments
 
 
+# Appendix 
+
+```{r, ref.label=knitr::all_labels(), eval=FALSE, echo = TRUE}
+
+```
+
+
+
 
 
