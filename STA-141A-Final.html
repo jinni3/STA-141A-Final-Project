@@ -784,6 +784,508 @@ that each mouse seems to have a different success rate.</p>
 <h1>Acknowledgements</h1>
 <p>ChatGPT used for debugging code and graph adjustments</p>
 </div>
+<div id="appendix" class="section level1">
+<h1>Appendix</h1>
+<pre class="r"><code>library(tidyverse)
+library(ggplot2)
+session=list()
+for(i in 1:18){
+  session[[i]]=readRDS(paste(&#39;./Data/session&#39;,i,&#39;.rds&#39;,sep=&#39;&#39;))
+  print(session[[i]]$mouse_name)
+  print(session[[i]]$date_exp)
+}
+
+
+session1 &lt;- session[[1]]
+str(session1)
+
+
+session_summary &lt;- data.frame(
+  session = integer(),
+  n_trials = integer(),
+  n_neurons = numeric()
+)
+
+for (i in 1:length(session)) {
+  sess &lt;- session[[i]]
+  
+  n_trials &lt;- length(sess$spks)
+  
+  n_neurons &lt;- nrow(sess$spks[[1]])
+  
+  session_summary &lt;- 
+    rbind(session_summary,
+          data.frame(session = i,
+                     n_trials = n_trials,
+                     n_neurons = n_neurons))
+}
+
+print(session_summary)
+
+
+
+trial_data_list &lt;- list()
+
+for (i in 1:18) {
+  sess &lt;- session[[i]]
+  for (j in 1:length(sess$spks)) {
+    trial_data_list[[length(trial_data_list) + 1]] &lt;- data.frame(
+      session = i,
+      trial = j,
+      feedback_type = sess$feedback_type[j],
+      contrast_left = sess$contrast_left[j],
+      contrast_right = sess$contrast_right[j]
+    )
+  }
+}
+
+trial_data &lt;- bind_rows(trial_data_list)
+
+feedback_summary &lt;- trial_data %&gt;%
+  group_by(contrast_left, contrast_right, feedback_type) %&gt;%
+  summarise(n = n(), .groups=&quot;drop&quot;) 
+
+print(feedback_summary)
+ggplot(trial_data, aes(x = factor(contrast_left), fill = factor(feedback_type))) +
+  geom_bar(position = &quot;dodge&quot;) +
+  facet_wrap(~ contrast_right) +
+  labs(title = &quot;Feedback Types by Contrast Conditions&quot;,
+       x = &quot;Contrast Left&quot;,
+       fill = &quot;Feedback Type&quot;) +
+  theme_minimal()
+ggplot(trial_data, aes(x = factor(contrast_right), fill = factor(feedback_type))) +
+  geom_bar(position = &quot;dodge&quot;) +
+  facet_wrap(~ contrast_left) +
+  labs(title = &quot;Feedback Types by Contrast Conditions&quot;,
+       x = &quot;Contrast Right&quot;,
+       fill = &quot;Feedback Type&quot;) +
+  theme_minimal()
+selected_session &lt;- session[[5]]
+selected_trial &lt;- selected_session$spks[[11]]  # This is a matrix: rows = neurons, columns = time bins
+
+# Convert the spike matrix to a data frame for plotting
+spike_df &lt;- as.data.frame(selected_trial)
+spike_df$neuron &lt;- 1:nrow(spike_df)
+spike_long &lt;- spike_df %&gt;%
+  pivot_longer(cols = -neuron, names_to = &quot;time_bin&quot;, values_to = &quot;spike_count&quot;)
+
+ggplot(spike_long, aes(x = time_bin, y = neuron, fill = spike_count)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(title = &quot;Spike Heatmap for Trial 11, Session 5&quot;,
+       x = &quot;Time Bin&quot;,
+       y = &quot;Neuron&quot;) +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+
+
+selected_session &lt;- session[[10]]
+selected_trial &lt;- selected_session$spks[[9]]
+
+spike_df &lt;- as.data.frame(selected_trial)
+spike_df$neuron &lt;- 1:nrow(spike_df)
+spike_long &lt;- spike_df %&gt;%
+  pivot_longer(cols = -neuron, names_to = &quot;time_bin&quot;, values_to = &quot;spike_count&quot;)
+
+ggplot(spike_long, aes(x = time_bin, y = neuron, fill = spike_count)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(title = &quot;Spike Heatmap for Trial 3, Session 10&quot;,
+       x = &quot;Time Bin&quot;,
+       y = &quot;Neuron&quot;) +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+
+
+trial_avg_spike &lt;- data.frame(
+  session = integer(),
+  trial = integer(),
+  avg_spike = numeric()
+)
+
+for (i in 1:length(session)) {
+  sess &lt;- session[[i]]
+  for (j in 1:length(sess$spks)) {
+    spike_matrix &lt;- sess$spks[[j]]
+    avg_spike &lt;- mean(spike_matrix)
+    trial_avg_spike &lt;- rbind(trial_avg_spike,
+                             data.frame(session = i, trial = j, avg_spike = avg_spike))
+  }
+}
+
+session5_data &lt;- trial_avg_spike %&gt;% filter(session == 5)
+overall_avg &lt;- mean(session5_data$avg_spike)
+
+
+
+ggplot(session5_data, aes(x = trial, y = avg_spike)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = overall_avg, color = &quot;red&quot;, linetype = &quot;dashed&quot;, linewidth = 0.1) +
+  labs(title = &quot;Average Spike Count Across Trials (Session 5)&quot;,
+       x = &quot;Trial Number&quot;,
+       y = &quot;Average Spike Count&quot;) +
+  theme_minimal()
+
+
+
+# trial_avg_spike has columns: session, trial, avg_spike
+# trial_data has columns: session, trial, feedback_type, contrast_left, contrast_right, etc.
+
+session_feedback_spikes &lt;- merge(trial_avg_spike, trial_data, by = c(&quot;session&quot;, &quot;trial&quot;))
+
+sessionx_feedback &lt;- session_feedback_spikes %&gt;% filter(session == 5)
+
+ggplot(sessionx_feedback, aes(group=(x = feedback_type), y = avg_spike)) +
+  geom_boxplot() +
+  facet_wrap(~ feedback_type, scales = &quot;free_y&quot;) +
+  labs(title = &quot;Session 5 Feedback vs. Average Spike Count&quot;,
+       x = &quot;Feedback Type&quot;,
+       y = &quot;Average Spike Count&quot;) +
+  theme_minimal() +
+  coord_flip()
+
+
+session_mice_list &lt;- list()
+
+for (i in 1:18) {
+  sess &lt;- session[[i]]
+  fb &lt;-sess$feedback_type
+  session_mice_list[[length(session_mice_list) + 1]] &lt;- data.frame(
+      session = i,
+      mouse_name = sess$mouse_name,
+      feedback = sum(fb==&quot;1&quot;)/length(fb)
+    )
+    
+}
+
+session_mice &lt;- bind_rows(session_mice_list)
+
+
+mouse_success_rate &lt;- session_mice %&gt;%
+  group_by(mouse_name) %&gt;%
+  summarise(avg_success_rate = mean(feedback))
+
+ggplot(mouse_success_rate, aes(x = mouse_name, y = avg_success_rate)) +
+  geom_bar(stat = &quot;identity&quot;, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = &quot;Average Success Feedback Rate by Mouse&quot;,
+       x = &quot;Mouse Name&quot;,
+       y = &quot;Average Success Feedback Rate&quot;) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+ggplot(session_mice, aes(x = factor(session), y = feedback)) +
+  geom_bar(stat = &quot;identity&quot;, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = &quot;Success Feedback Rate by Session&quot;,
+       x = &quot;Session&quot;,
+       y = &quot;Average Success Feedback Rate&quot;) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = &quot;none&quot;)
+
+
+pred_data_list &lt;- list()
+
+for (i in 1:18) {
+  sess &lt;- session[[i]]
+  for (j in 1:length(sess$spks)) {
+    spike_matrix &lt;- sess$spks[[j]]
+    avg_spike &lt;- mean(spike_matrix)
+    pred_data_list[[length(pred_data_list) + 1]] &lt;- data.frame(
+      session = i,
+      trial = j,
+      contrast_left = sess$contrast_left[j],
+      contrast_right = sess$contrast_right[j],
+      avg_spike = avg_spike
+    )
+  }
+}
+
+pred_data &lt;- bind_rows(pred_data_list)
+
+
+
+library(readr)
+library(caret) # confusion matrix
+library(ROCR) # ROC curve
+library(xgboost)
+
+
+s = session[[5]]
+
+n_obs = length(sess$feedback_type)
+
+dat = tibble(
+    feedback_type = as.factor(sess$feedback_type),  
+    decision = rep(&#39;name&#39;, n_obs),
+    avg_spikes = rep(0, n_obs)
+)
+
+for (i in 1:n_obs){
+    if (sess$contrast_left[i] &gt; sess$contrast_right[i]){
+        dat$decision[i] = &#39;1&#39;  # Left contrast higher
+    } else if (sess$contrast_left[i] &lt; sess$contrast_right[i]){
+        dat$decision[i] = &#39;2&#39;  # Right contrast higher
+    } else if (sess$contrast_left[i] == sess$contrast_right[i] &amp; sess$contrast_left[i] == 0){
+        dat$decision[i] = &#39;3&#39;  # No stimulus
+    } else{
+        dat$decision[i] = &#39;4&#39;  # Equal non-zero contrast
+    }
+    
+    # Compute average spikes per trial
+    spks.trial = sess$spks[[i]]
+    total.spikes = apply(spks.trial, 1, sum)  # Sum spikes per neuron
+    dat$avg_spikes[i] = mean(total.spikes)  # Compute mean spikes per trial
+}
+
+dat$decision = as.factor(dat$decision)
+
+dat &lt;- dat %&gt;% mutate(feedback_type = as.numeric(as.character(feedback_type)))
+
+# Create separate tables for success and fail trials
+success_trials &lt;- dat %&gt;% filter(feedback_type == 1) %&gt;% select(-feedback_type)
+failed_trials &lt;- dat %&gt;% filter(feedback_type == -1) %&gt;% select(-feedback_type)
+
+print(&quot;Success Trials Summary:&quot;)
+print(summary(success_trials))
+
+print(&quot;Failed Trials Summary:&quot;)
+print(summary(failed_trials))
+
+num_success &lt;- sum(dat$feedback_type ==1)
+num_total &lt;- nrow(dat)
+
+success_rate &lt;- (num_success)/(num_total)
+print(success_rate)
+
+
+
+set.seed(143)
+
+sample &lt;- sample.int(n = n_obs, size = floor(.8 * n_obs), replace = F)
+train1 &lt;- dat[sample, ]
+test1  &lt;- dat[-sample, ]
+train1$feedback_type &lt;- ifelse(train1$feedback_type == -1, 0, train1$feedback_type) 
+
+fit1 &lt;- glm(feedback_type~., data = train1, family=&quot;binomial&quot;)
+summary(fit1)
+
+pred1 &lt;- predict(fit1, test1 %&gt;% select(-feedback_type), type = &#39;response&#39;)
+prediction1 &lt;- factor(pred1 &gt; 0.5, labels = c(&#39;-1&#39;, &#39;1&#39;))
+mean(prediction1 == test1$feedback_type)
+
+table(Predicted = prediction1, Actual = test1$feedback_type)
+# Filter out decision 4
+
+set.seed(143)
+train2 &lt;- train1 %&gt;% filter(decision != 4)
+test2 &lt;- test1 %&gt;% filter(decision != 4)
+
+
+fit2 &lt;- glm(feedback_type ~ ., data = train2, family = &quot;binomial&quot;)
+summary(fit2)
+
+
+pred2 &lt;- predict(fit2, test2 %&gt;% select(-feedback_type), type = &#39;response&#39;)
+pred_binary &lt;- ifelse(pred2 &gt; 0.5, 1, -1)  # Ensure correct labels
+prediction2 &lt;- factor(pred_binary, levels = c(&#39;-1&#39;, &#39;1&#39;))
+mean(prediction2 == test2$feedback_type)
+
+table(Predicted = prediction2, Actual = test2$feedback_type)
+# Model 1
+pr = prediction(pred1, test1$feedback_type)
+prf &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+auc &lt;- performance(pr, measure = &quot;auc&quot;)
+auc &lt;- auc@y.values[[1]]
+
+# Model 2
+pr = prediction(pred2, test2$feedback_type)
+prf2 &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+auc2 &lt;- performance(pr, measure = &quot;auc&quot;)
+auc2 &lt;- auc2@y.values[[1]]
+
+# Bias Guess
+pred0 = pred1 * 0 + 1
+pr = prediction(pred0, test1$feedback_type)
+prf0 &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+auc0 &lt;- performance(pr, measure = &quot;auc&quot;)
+auc0 &lt;- auc0@y.values[[1]]
+
+plot(prf2, ,col = &#39;red&#39;, main = &#39;ROC curve&#39;)
+plot(prf, add = TRUE, col = &#39;blue&#39;)
+plot(prf0, add = TRUE, col = &#39;green&#39;)
+legend(&quot;bottomright&quot;, legend=c(&quot;Model 1&quot;, &quot;Model 2&quot;, &quot;Bias Guess&quot;), col=c(&quot;blue&quot;, &quot;red&quot;, &#39;green&#39;), lty=1:1, 
+       cex=0.8)
+
+print(&quot;AUC Model 1: &quot;)
+print(auc)
+
+print(&quot;AUC Model 2: &quot;)
+print(auc2)
+
+
+test.data=list()
+for(i in 1:2){
+  test.data[[i]]=readRDS(paste(&#39;./test/test&#39;,i,&#39;.rds&#39;,sep=&#39;&#39;))
+  print(test.data[[i]]$mouse_name)
+  print(test.data[[i]]$date_exp)
+}
+
+
+t = test.data[[1]]
+
+n_obs1 = length(t$feedback_type)
+
+dat1 = tibble(
+    feedback_type = as.factor(t$feedback_type),  
+    decision = rep(&#39;name&#39;, n_obs1),
+    avg_spikes = rep(0, n_obs1)
+)
+
+for (i in 1:n_obs1){
+    if (t$contrast_left[i] &gt; t$contrast_right[i]){
+        dat1$decision[i] = &#39;1&#39;  # Left contrast higher
+    } else if (t$contrast_left[i] &lt; t$contrast_right[i]){
+        dat1$decision[i] = &#39;2&#39;  # Right contrast higher
+    } else if (t$contrast_left[i] == t$contrast_right[i] &amp; t$contrast_left[i] == 0){
+        dat1$decision[i] = &#39;3&#39;  # No stimulus
+    } else{
+        dat1$decision[i] = &#39;4&#39;  # Equal non-zero contrast
+    }
+    
+    # Compute average spikes per trial
+    spks.trial = t$spks[[i]]
+    total.spikes = apply(spks.trial, 1, sum)  # Sum spikes per neuron
+    dat1$avg_spikes[i] = mean(total.spikes)  # Compute mean spikes per trial
+}
+
+dat1$decision = as.factor(dat1$decision)
+
+dat1 &lt;- dat1 %&gt;% mutate(feedback_type = as.numeric(as.character(feedback_type)))
+
+
+
+set.seed(143)
+
+sample &lt;- sample.int(n = n_obs1, size = floor(.8 * n_obs1), replace = F)
+t_train1 &lt;- dat1[sample, ]
+t_test1  &lt;- dat1[-sample, ]
+t_train1$feedback_type &lt;- ifelse(t_train1$feedback_type == -1, 0, t_train1$feedback_type) 
+
+# Filter out decision 4
+t_train1_clean &lt;- t_train1 %&gt;% filter(decision != 4)
+t_test1_clean &lt;- t_test1 %&gt;% filter(decision != 4)
+
+
+t_fit1 &lt;- glm(feedback_type ~ ., data = t_train1_clean, family = &quot;binomial&quot;)
+summary(t_fit1)
+
+
+t_pred1 &lt;- predict(t_fit1, t_test1_clean %&gt;% select(-feedback_type), type = &#39;response&#39;)
+t_pred_binary1 &lt;- ifelse(t_pred1 &gt; 0.5, 1, -1)  # Ensure correct labels
+t_prediction1 &lt;- factor(t_pred_binary1, levels = c(&#39;-1&#39;, &#39;1&#39;))
+mean(t_prediction1 == t_test1_clean$feedback_type)
+
+table(Predicted = t_prediction1, Actual = t_test1_clean$feedback_type)
+# Model 1
+pr = prediction(t_pred1, t_test1_clean$feedback_type)
+t_prf1 &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+t_auc1 &lt;- performance(pr, measure = &quot;auc&quot;)
+t_auc1 &lt;- t_auc1@y.values[[1]]
+
+# Bias Guess
+pred0 = pred1 * 0 + 1
+pr = prediction(pred0, test1$feedback_type)
+prf0 &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+auc0 &lt;- performance(pr, measure = &quot;auc&quot;)
+auc0 &lt;- auc0@y.values[[1]]
+
+
+plot(t_prf1, col = &quot;blue&quot;, main = &#39;ROC curve&#39;)
+plot(prf0, add = TRUE, col = &#39;green&#39;)
+legend(&quot;bottomright&quot;, legend=c(&quot;Test 1&quot;,&quot;Bias Guess&quot;), col=c(&quot;blue&quot;,  &#39;green&#39;), lty=1:1, 
+       cex=0.8)
+
+print(c(t_auc1))
+
+t2 = test.data[[2]]
+
+n_obs2 = length(t2$feedback_type)
+
+dat2 = tibble(
+    feedback_type = as.factor(t2$feedback_type),  
+    decision = rep(&#39;name&#39;, n_obs2),
+    avg_spikes = rep(0, n_obs2)
+)
+
+for (i in 1:n_obs2){
+    if (t2$contrast_left[i] &gt; t2$contrast_right[i]){
+        dat2$decision[i] = &#39;1&#39;  # Left contrast higher
+    } else if (t2$contrast_left[i] &lt; t2$contrast_right[i]){
+        dat2$decision[i] = &#39;2&#39;  # Right contrast higher
+    } else if (t2$contrast_left[i] == t2$contrast_right[i] &amp; t2$contrast_left[i] == 0){
+        dat2$decision[i] = &#39;3&#39;  # No stimulus
+    } else{
+        dat2$decision[i] = &#39;4&#39;  # Equal non-zero contrast
+    }
+    
+    # Compute average spikes per trial
+    spks.trial = t2$spks[[i]]
+    total.spikes = apply(spks.trial, 1, sum)  # Sum spikes per neuron
+    dat2$avg_spikes[i] = mean(total.spikes)  # Compute mean spikes per trial
+}
+
+dat2$decision = as.factor(dat2$decision)
+
+dat2 &lt;- dat2 %&gt;% mutate(feedback_type = as.numeric(as.character(feedback_type)))
+
+
+
+set.seed(143)
+
+sample &lt;- sample.int(n = n_obs2, size = floor(.8 * n_obs2), replace = F)
+t_train2 &lt;- dat2[sample, ]
+t_test2  &lt;- dat2[-sample, ]
+t_train2$feedback_type &lt;- ifelse(t_train2$feedback_type == -1, 0, t_train2$feedback_type) 
+
+# Filter out decision 4
+t_train2_clean &lt;- t_train2 %&gt;% filter(decision != 4)
+t_test2_clean &lt;- t_test2 %&gt;% filter(decision != 4)
+
+
+t_fit2 &lt;- glm(feedback_type ~ ., data = t_train2_clean, family = &quot;binomial&quot;)
+summary(t_fit2)
+
+
+t_pred2 &lt;- predict(t_fit2, t_test2_clean %&gt;% select(-feedback_type), type = &#39;response&#39;)
+t_pred_binary2 &lt;- ifelse(t_pred2 &gt; 0.5, 1, -1)  # Ensure correct labels
+t_prediction2 &lt;- factor(t_pred_binary2, levels = c(&#39;-1&#39;, &#39;1&#39;))
+mean(t_prediction2 == t_test2_clean$feedback_type)
+
+table(Predicted = t_prediction2, Actual = t_test2_clean$feedback_type)
+# Model 1
+pr = prediction(t_pred2, t_test2_clean$feedback_type)
+t_prf2 &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+t_auc2 &lt;- performance(pr, measure = &quot;auc&quot;)
+t_auc2 &lt;- t_auc2@y.values[[1]]
+
+# Bias Guess
+pred0 = pred1 * 0 + 1
+pr = prediction(pred0, test1$feedback_type)
+prf0 &lt;- performance(pr, measure = &quot;tpr&quot;, x.measure = &quot;fpr&quot;)
+auc0 &lt;- performance(pr, measure = &quot;auc&quot;)
+auc0 &lt;- auc0@y.values[[1]]
+
+
+plot(t_prf2, col = &quot;blue&quot;, main = &#39;ROC curve&#39;)
+plot(prf0, add = TRUE, col = &#39;green&#39;)
+legend(&quot;bottomright&quot;, legend=c(&quot;Test 1&quot;,&quot;Bias Guess&quot;), col=c(&quot;blue&quot;,  &#39;green&#39;), lty=1:1, 
+       cex=0.8)
+
+print(c(t_auc2))</code></pre>
+</div>
 
 
 
